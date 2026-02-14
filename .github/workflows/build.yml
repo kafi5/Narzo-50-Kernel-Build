@@ -1,4 +1,4 @@
-name: Build Narzo 50 Kernel (KSU + SUSFS)
+name: Build Narzo 50 Kernel (KSU + SUSFS Stable)
 
 on:
   workflow_dispatch:
@@ -8,17 +8,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    # ======================
+    # Checkout
+    # ======================
+    - name: Checkout
       uses: actions/checkout@v4
 
+    # ======================
+    # Dependencies
+    # ======================
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3 zip wget
+        sudo apt-get install -y \
+        build-essential bc bison flex libssl-dev \
+        libncurses5-dev libelf-dev git curl zip wget patch
 
-    # =============================
-    # Setup Neutron Clang
-    # =============================
+    # ======================
+    # Neutron Clang
+    # ======================
     - name: Setup Neutron Clang
       run: |
         mkdir clang
@@ -27,59 +35,39 @@ jobs:
         chmod +x antman
         ./antman -S
 
-    # =============================
-    # Clone Kernel Source
-    # =============================
+    # ======================
+    # Kernel Source
+    # ======================
     - name: Clone Kernel Source
       run: |
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
-    # =============================
-    # Setup KernelSU-Next + SUSFS
-    # =============================
+    # ======================
+    # KernelSU + SUSFS
+    # ======================
     - name: Setup KernelSU-Next & SUSFS
       run: |
         cd kernel_source
 
-        echo "=== Installing KernelSU-Next ==="
+        echo "=== Install KernelSU-Next ==="
         curl -LSs https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh | bash -
 
-        echo "=== Cloning SUSFS ==="
+        echo "=== Clone SUSFS ==="
         git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
 
-        echo "=== Finding SUSFS folder ==="
-        SUSFS_SRC=$(find susfs4ksu -type d -name "susfs" | head -n 1)
+        echo "=== Apply SUSFS patches ==="
+        cd susfs4ksu/kernel_patches
 
-        if [ -z "$SUSFS_SRC" ]; then
-          echo "ERROR: SUSFS folder not found!"
-          ls -R susfs4ksu
-          exit 1
-        fi
+        patch -p1 --forward --ignore-whitespace < 50_add_susfs_in_kernel-4.19.patch
+        patch -p1 --forward --ignore-whitespace < KernelSU/10_enable_susfs_for_ksu.patch
 
-        echo "SUSFS found at: $SUSFS_SRC"
-        cp -r "$SUSFS_SRC" fs/
+        cd ../../
 
-        echo "=== Copying header ==="
-        SUSFS_HEADER=$(find susfs4ksu -type f -name "susfs.h" | head -n 1)
+        echo "=== SUSFS Applied ==="
 
-        if [ -z "$SUSFS_HEADER" ]; then
-          echo "ERROR: susfs.h not found!"
-          exit 1
-        fi
-
-        cp "$SUSFS_HEADER" include/linux/
-
-        echo "=== Patching fs/Kconfig ==="
-        grep -q "fs/susfs/Kconfig" fs/Kconfig || \
-        sed -i '/source "fs\/notify\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
-
-        echo "=== Patching fs/Makefile ==="
-        grep -q "susfs" fs/Makefile || \
-        sed -i '/obj-$(CONFIG_QUOTA)/a obj-$(CONFIG_SUSFS) += susfs/' fs/Makefile
-
-    # =============================
+    # ======================
     # Build Kernel
-    # =============================
+    # ======================
     - name: Build Kernel
       run: |
         cd kernel_source
@@ -93,6 +81,7 @@ jobs:
         make O=out clean
         make O=out spaced_defconfig
 
+        # Enable KernelSU + SUSFS
         echo "CONFIG_KSU=y" >> out/.config
         echo "CONFIG_KSU_SUSFS=y" >> out/.config
         echo "CONFIG_SUSFS=y" >> out/.config
@@ -112,9 +101,9 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             Image.gz-dtb
 
-    # =============================
+    # ======================
     # AnyKernel3 Zip
-    # =============================
+    # ======================
     - name: Create Flashable Zip
       run: |
         git clone https://github.com/osm0sis/AnyKernel3.git
@@ -122,11 +111,11 @@ jobs:
         cd AnyKernel3
         zip -r9 ../Narzo50-KSU-SUSFS.zip * -x .git README.md *placeholder
 
-    # =============================
+    # ======================
     # Upload
-    # =============================
+    # ======================
     - name: Upload Kernel
       uses: actions/upload-artifact@v4
       with:
-        name: Narzo50-kafi-Kernel
-        path: Narzo50-KSU-kafi-SUSFS.zip
+        name: Narzo50-Kernel
+        path: Narzo50-KSU-SUSFS.zip
