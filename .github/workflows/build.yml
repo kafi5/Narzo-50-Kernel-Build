@@ -1,4 +1,4 @@
-name: Build Narzo 50 Kernel (KSU-Next Only)
+name: Build Narzo 50 Kernel (Fixed Missing File)
 
 on:
   workflow_dispatch:
@@ -28,12 +28,18 @@ jobs:
       run: |
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
+    - name: Fix Missing Oplus Drivers
+      run: |
+        cd kernel_source
+        # এই সমস্যা ফিক্স করার জন্য ডামি ফাইল বানানো হচ্ছে
+        mkdir -p drivers/soc/oplus/system/acm
+        echo "obj-n := dummy.o" > drivers/soc/oplus/system/acm/Makefile
+        echo "Fixed missing acm Makefile!"
+
     - name: Setup KernelSU-Next
       run: |
         cd kernel_source
-        
         echo "--- Installing KernelSU-Next ---"
-        # অটোমেটিক সেটআপ স্ক্রিপ্ট (কোনো ম্যানুয়াল প্যাচ লাগবে না)
         curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
 
     - name: Build Kernel
@@ -45,7 +51,9 @@ jobs:
         export KBUILD_BUILD_USER="kafi5"
         export KBUILD_BUILD_HOST="GitHub-Action"
         
-        make O=out clean mrproper
+        # 'make clean' বাদ দেওয়া হয়েছে কারণ ওটাতেই এরর আসছিল
+        
+        echo "Loading Configuration..."
         make O=out spaced_defconfig
         
         # KernelSU অন করা হচ্ছে
@@ -53,6 +61,7 @@ jobs:
         
         make O=out olddefconfig
 
+        echo "Starting Build..."
         make -j$(nproc --all) O=out \
                               CC=clang \
                               LD=ld.lld \
@@ -68,12 +77,20 @@ jobs:
     - name: Create Flashable Zip (AnyKernel3)
       run: |
         git clone https://github.com/osm0sis/AnyKernel3.git
-        cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        
+        # চেক করা হচ্ছে কার্নেল বিল্ড হয়েছে কিনা
+        if [ -f kernel_source/out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        else
+            echo "Error: Kernel Image not found! Build Failed."
+            exit 1
+        fi
+        
         cd AnyKernel3
         zip -r9 ../Narzo50-KSU-Next.zip * -x .git README.md *placeholder
 
     - name: Upload Kernel Zip
       uses: actions/upload-artifact@v4
       with:
-        name: OPKernel-KSU-Next-kafi
-        path: OPKernel-KSU-Next.zip
+        name: Narzo50-KSU-Next-Zip
+        path: Narzo50-KSU-Next.zip
