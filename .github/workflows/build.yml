@@ -1,4 +1,4 @@
-name: Narzo 50 Ultimate Build (100k Edition)
+name: Narzo 50 Stable Build (Official KSU)
 
 on:
   workflow_dispatch:
@@ -11,13 +11,13 @@ jobs:
     - name: 1. Checkout Code
       uses: actions/checkout@v2
 
-    - name: 2. Install High-Performance Dependencies
+    - name: 2. Install Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
         libelf-dev git curl python3 zip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-    - name: 3. Setup Neutron Clang (Latest)
+    - name: 3. Setup Neutron Clang
       run: |
         mkdir -p clang
         cd clang
@@ -25,54 +25,58 @@ jobs:
         chmod +x antman
         ./antman -S
         
-    - name: 4. Clone Broken Source Code
+    - name: 4. Clone Source
       run: |
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
-    - name: 5. REPAIR BROKEN SOURCE (The 1 Lakh Taka Fix)
+    - name: 5. REPAIR BROKEN SOURCE
       run: |
         cd kernel_source
-        echo "--- Fixing Missing Realme Drivers ---"
-        
-        # Oplus ACM ড্রাইভার ফিক্স
+        # মিসিং ড্রাইভার ফিক্স (যেটা আগে এরর দিচ্ছিল)
         mkdir -p drivers/soc/oplus/system/acm
         echo "obj-n := dummy.o" > drivers/soc/oplus/system/acm/Makefile
-        
-        # যদি অন্য কোনো Oplus ফোল্ডার মিসিং থাকে, সেগুলোর জন্য সেফটি ফিক্স
-        find drivers/soc/oplus -name "Makefile" | while read file; do
-          dir=$(dirname "$file")
-          if [ ! -f "$dir/Makefile" ]; then
-             echo "Fixing ghost makefile in $dir"
-             touch "$dir/Makefile"
-          fi
-        done
-        echo "--- Source Code Repaired Successfully ---"
 
-    - name: 6. Inject KernelSU-Next
+    - name: 6. Install Official KernelSU (Stable)
       run: |
         cd kernel_source
-        echo "--- Installing KSU-Next ---"
-        curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
+        echo "--- Installing Official KernelSU ---"
+        # KSU-Next এর বদলে অফিসিয়াল KSU ব্যবহার করছি যা 4.19 এ ক্র্যাশ করে না
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-    - name: 7. Configure & Build
+    - name: 7. Configure Kernel
       run: |
         cd kernel_source
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         export ARCH=arm64
         export SUBARCH=arm64
-        export KBUILD_BUILD_USER="Kafi-Pro"
-        export KBUILD_BUILD_HOST="Narzo-Lab"
         
-        # ক্লিনিং বাদ দিয়ে সরাসরি কনফিগ লোড (সেফ মোড)
         make O=out spaced_defconfig
         
-        # KernelSU ফিচার অন করা
-        echo "CONFIG_KSU=y" >> out/.config
+        echo "--- APPLYING PATCHES ---"
+        # ১. LTO বন্ধ করা (র‍্যাম ও এরর বাঁচাবে)
+        sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' out/.config
+        sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' out/.config
+        sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' out/.config
+        echo "CONFIG_LTO_NONE=y" >> out/.config
         
-        # কনফিগ আপডেট
+        # ২. Werror বন্ধ করা
+        sed -i 's/CONFIG_CC_WERROR=y/CONFIG_CC_WERROR=n/' out/.config
+        
+        # ৩. KernelSU অন করা
+        echo "CONFIG_KSU=y" >> out/.config
+
         make O=out olddefconfig
 
-        echo "--- Starting Ultimate Build ---"
+    - name: 8. Build Kernel
+      run: |
+        cd kernel_source
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER="Kafi-Stable"
+        export KBUILD_BUILD_HOST="Narzo-Lab"
+        
+        echo "--- Starting Build ---"
         make -j$(nproc --all) O=out \
                               CC=clang \
                               LD=ld.lld \
@@ -85,25 +89,20 @@ jobs:
                               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
                               Image.gz-dtb
 
-    - name: 8. Create Flashable Zip
+    - name: 9. Create Zip
       run: |
-        # চেক করা হচ্ছে কার্নেল বিল্ড হয়েছে কিনা
         if [ ! -f kernel_source/out/arch/arm64/boot/Image.gz-dtb ]; then
-            echo "CRITICAL ERROR: Kernel Image failed to build!"
+            echo "CRITICAL ERROR: Kernel Image not found!"
             exit 1
         fi
         
         git clone https://github.com/osm0sis/AnyKernel3.git
         cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        
         cd AnyKernel3
-        # অপ্রয়োজনীয় ফাইল ক্লিন করা
         rm -rf .git README.md .gitignore
-        
-        # জিপ বানানো
-        zip -r9 ../Narzo50-Pro-Build.zip *
+        zip -r9 ../Narzo50-Official-KSU.zip *
 
-    - name: 9. Upload Final Product
+    - name: 10. Upload
       uses: actions/upload-artifact@v4
       with:
         name: Narzo50-Perf-Kernel
