@@ -1,4 +1,4 @@
-name: Build Narzo 50 Kernel (KSU-Next + SUSFS)
+name: Build Narzo 50 Kernel (Fixed SUSFS)
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3 zip
 
     - name: Setup Neutron Clang
       run: |
@@ -33,46 +33,19 @@ jobs:
         cd kernel_source
         
         echo "--- Installing KernelSU-Next ---"
-        # KernelSU-Next (Rifsxd Fork) ইনস্টল করা হচ্ছে
         curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
         
         echo "--- Downloading SUSFS ---"
         git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
         
-        echo "--- Patching SUSFS ---"
-        # 1. SUSFS ফাইলগুলো কার্নেল সোর্সে কপি করা
-        cp -r susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19/fs/susfs fs/
-        cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19/include/linux/susfs.h include/linux/
+        echo "--- Patching SUSFS (Smart Mode) ---"
+        # আমি এখানে Wildcard (*) ব্যবহার করেছি যাতে ফোল্ডার নাম যা-ই হোক, সে 4.19 লেখা ফোল্ডার থেকে কপি করে নেয়
+        cp -r susfs4ksu/kernel_patches/*4.19*/fs/susfs fs/
+        cp susfs4ksu/kernel_patches/*4.19*/include/linux/susfs.h include/linux/
 
-        # 2. fs/Kconfig ফাইলে SUSFS যোগ করা (অটোমেটিক এডিট)
-        # এটা 'source "fs/notify/Kconfig"' এর পরে SUSFS এর লাইন বসাবে
+        # Config এডিট করা
         sed -i '/source "fs\/notify\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
-
-        # 3. fs/Makefile ফাইলে SUSFS যোগ করা
         sed -i '/obj-$(CONFIG_QUOTA)/a obj-$(CONFIG_SUSFS) += susfs/' fs/Makefile
-
-        # 4. KernelSU তে SUSFS হুক যোগ করা (যদি প্রয়োজন হয়)
-        # সাধারণত KSU-Next এ SUSFS সাপোর্ট বিল্ট-ইন থাকে, তাই আলাদা প্যাচ নাও লাগতে পারে।
-        # কিন্তু সেফটির জন্য আমরা Defconfig এ সব অন করে দেব।
-
-    - name: Configure Build
-      run: |
-        cd kernel_source
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        export ARCH=arm64
-        export SUBARCH=arm64
-        
-        make O=out clean mrproper
-        make O=out spaced_defconfig
-        
-        # Defconfig-এ KSU এবং SUSFS অন করা হচ্ছে
-        echo "CONFIG_KSU=y" >> out/.config
-        echo "CONFIG_KSU_SUSFS=y" >> out/.config
-        echo "CONFIG_SUSFS=y" >> out/.config
-        echo "CONFIG_SUSFS_ENABLE_LOG=y" >> out/.config
-        
-        # কনফিগ আপডেট করা
-        make O=out olddefconfig
 
     - name: Build Kernel
       run: |
@@ -83,6 +56,16 @@ jobs:
         export KBUILD_BUILD_USER="kafi5"
         export KBUILD_BUILD_HOST="GitHub-Action"
         
+        make O=out clean mrproper
+        make O=out spaced_defconfig
+        
+        echo "CONFIG_KSU=y" >> out/.config
+        echo "CONFIG_KSU_SUSFS=y" >> out/.config
+        echo "CONFIG_SUSFS=y" >> out/.config
+        echo "CONFIG_SUSFS_ENABLE_LOG=y" >> out/.config
+        
+        make O=out olddefconfig
+
         make -j$(nproc --all) O=out \
                               CC=clang \
                               LD=ld.lld \
@@ -95,8 +78,15 @@ jobs:
                               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
                               Image.gz-dtb
 
-    - name: Upload Kernel
+    - name: Create Flashable Zip (AnyKernel3)
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3.git
+        cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3
+        zip -r9 ../Narzo50-Kernel-KSU-SUSFS.zip * -x .git README.md *placeholder
+
+    - name: Upload Kernel Zip
       uses: actions/upload-artifact@v4
       with:
-        name: Image.gz-dtb
-        path: kernel_source/out/arch/arm64/boot/Image.gz-dtb
+        name: Narzo50-Kernel-kafi-Zip
+        path: Narzo50-Kernel-KSU-kafi-SUSFS.zip
