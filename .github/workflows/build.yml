@@ -1,0 +1,71 @@
+name: Build Narzo 50 Kernel
+
+on:
+  workflow_dispatch: # বাটন টিপে বিল্ড শুরু করার জন্য
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3
+
+    - name: Setup Neutron Clang
+      run: |
+        mkdir -p clang
+        cd clang
+        # Neutron Clang সেটআপ (Clang 17+ সাপোর্ট করে)
+        curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+        chmod +x antman
+        ./antman -S
+        
+    - name: Clone Kernel Source
+      run: |
+        # তোমার দেওয়া লিঙ্ক
+        git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
+
+    - name: Build Kernel
+      run: |
+        cd kernel_source
+        
+        # Toolchain পাথ সেট করা
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        
+        # আউটপুট ফোল্ডার তৈরি
+        mkdir -p out
+
+        echo "Cleaning up..."
+        make O=out clean mrproper
+
+        echo "Loading Configuration: spaced_defconfig"
+        # তোমার ছবিতে দেওয়া কনফিগ লোড করা হচ্ছে
+        make O=out spaced_defconfig
+
+        echo "Starting Build..."
+        # মেইন বিল্ড কমান্ড
+        make -j$(nproc --all) O=out \
+                              CC=clang \
+                              LD=ld.lld \
+                              AR=llvm-ar \
+                              NM=llvm-nm \
+                              OBJCOPY=llvm-objcopy \
+                              OBJDUMP=llvm-objdump \
+                              STRIP=llvm-strip \
+                              CROSS_COMPILE=aarch64-linux-gnu- \
+                              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                              Image.gz-dtb
+
+    - name: Upload Kernel
+      uses: actions/upload-artifact@v4
+      with:
+        name: Image.gz-dtb
+        # বিল্ড হওয়ার পর ফাইলটা এখান থেকে আপলোড হবে
+        path: kernel_source/out/arch/arm64/boot/Image.gz-dtb
