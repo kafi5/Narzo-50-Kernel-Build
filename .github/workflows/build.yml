@@ -1,4 +1,4 @@
-name: Narzo50 Kernel Build (KSU + SUSFS Stable)
+name: Build Narzo 50 Kernel (KSU-Next Only)
 
 on:
   workflow_dispatch:
@@ -8,115 +8,72 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # ======================
-    # Checkout
-    # ======================
-    - name: Checkout
-      uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v2
 
-    # ======================
-    # Dependencies
-    # ======================
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-        build-essential bc bison flex \
-        libssl-dev libncurses5-dev libelf-dev \
-        git curl zip wget patch
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3 zip
 
-    # ======================
-    # Setup Neutron Clang
-    # ======================
     - name: Setup Neutron Clang
       run: |
-        mkdir clang
+        mkdir -p clang
         cd clang
-        curl -LO https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman
+        curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
         chmod +x antman
         ./antman -S
-
-    # ======================
-    # Clone Kernel
-    # ======================
+        
     - name: Clone Kernel Source
       run: |
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
-    # ======================
-    # KernelSU + SUSFS
-    # ======================
-    - name: Setup KernelSU & SUSFS
+    - name: Setup KernelSU-Next
       run: |
         cd kernel_source
+        
+        echo "--- Installing KernelSU-Next ---"
+        # অটোমেটিক সেটআপ স্ক্রিপ্ট (কোনো ম্যানুয়াল প্যাচ লাগবে না)
+        curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-        echo "=== Install KernelSU-Next ==="
-        curl -LSs https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh | bash -
-
-        echo "=== Clone SUSFS ==="
-        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
-
-        echo "=== Apply SUSFS patches from kernel root ==="
-        patch -p1 --forward --ignore-whitespace < susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
-        patch -p1 --forward --ignore-whitespace < susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
-
-        echo "=== SUSFS setup done ==="
-
-    # ======================
-    # Build Kernel
-    # ======================
     - name: Build Kernel
       run: |
         cd kernel_source
-
-        export PATH=$GITHUB_WORKSPACE/clang/neutron-clang/bin:$PATH
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         export ARCH=arm64
         export SUBARCH=arm64
-        export KBUILD_BUILD_USER="lagfree"
-        export KBUILD_BUILD_HOST="GitHub"
-
-        echo "=== Clean ==="
-        make O=out clean
-
-        echo "=== Defconfig ==="
+        export KBUILD_BUILD_USER="kafi5"
+        export KBUILD_BUILD_HOST="GitHub-Action"
+        
+        make O=out clean mrproper
         make O=out spaced_defconfig
-
-        echo "=== Enable KSU + SUSFS ==="
+        
+        # KernelSU অন করা হচ্ছে
         echo "CONFIG_KSU=y" >> out/.config
-        echo "CONFIG_KSU_SUSFS=y" >> out/.config
-        echo "CONFIG_SUSFS=y" >> out/.config
-        echo "CONFIG_SUSFS_ENABLE_LOG=y" >> out/.config
-
+        
         make O=out olddefconfig
 
-        echo "=== Building Kernel ==="
-        make -j$(nproc) O=out \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            Image.gz-dtb
+        make -j$(nproc --all) O=out \
+                              CC=clang \
+                              LD=ld.lld \
+                              AR=llvm-ar \
+                              NM=llvm-nm \
+                              OBJCOPY=llvm-objcopy \
+                              OBJDUMP=llvm-objdump \
+                              STRIP=llvm-strip \
+                              CROSS_COMPILE=aarch64-linux-gnu- \
+                              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                              Image.gz-dtb
 
-    # ======================
-    # AnyKernel3
-    # ======================
-    - name: Create Flashable Zip
+    - name: Create Flashable Zip (AnyKernel3)
       run: |
         git clone https://github.com/osm0sis/AnyKernel3.git
         cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         cd AnyKernel3
-        zip -r9 ../Narzo50-KSU-SUSFS.zip * -x .git README.md *placeholder
+        zip -r9 ../Narzo50-KSU-Next.zip * -x .git README.md *placeholder
 
-    # ======================
-    # Upload
-    # ======================
-    - name: Upload Kernel
+    - name: Upload Kernel Zip
       uses: actions/upload-artifact@v4
       with:
-        name: Narzo50-kafi-Kernel
-        path: Narzo50-KSU-kafi-SUSFS.zip
+        name: OPKernel-KSU-Next-kafi
+        path: OPKernel-KSU-Next.zip
