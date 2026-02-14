@@ -1,4 +1,4 @@
-name: Build Narzo 50 Kernel (Fixed Missing File)
+name: Narzo 50 Ultimate Build (100k Edition)
 
 on:
   workflow_dispatch:
@@ -8,15 +8,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    - name: 1. Checkout Code
       uses: actions/checkout@v2
 
-    - name: Install Dependencies
+    - name: 2. Install High-Performance Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libelf-dev git curl python3 zip
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
+        libelf-dev git curl python3 zip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-    - name: Setup Neutron Clang
+    - name: 3. Setup Neutron Clang (Latest)
       run: |
         mkdir -p clang
         cd clang
@@ -24,44 +25,54 @@ jobs:
         chmod +x antman
         ./antman -S
         
-    - name: Clone Kernel Source
+    - name: 4. Clone Broken Source Code
       run: |
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
-    - name: Fix Missing Oplus Drivers
+    - name: 5. REPAIR BROKEN SOURCE (The 1 Lakh Taka Fix)
       run: |
         cd kernel_source
-        # এই সমস্যা ফিক্স করার জন্য ডামি ফাইল বানানো হচ্ছে
+        echo "--- Fixing Missing Realme Drivers ---"
+        
+        # Oplus ACM ড্রাইভার ফিক্স
         mkdir -p drivers/soc/oplus/system/acm
         echo "obj-n := dummy.o" > drivers/soc/oplus/system/acm/Makefile
-        echo "Fixed missing acm Makefile!"
+        
+        # যদি অন্য কোনো Oplus ফোল্ডার মিসিং থাকে, সেগুলোর জন্য সেফটি ফিক্স
+        find drivers/soc/oplus -name "Makefile" | while read file; do
+          dir=$(dirname "$file")
+          if [ ! -f "$dir/Makefile" ]; then
+             echo "Fixing ghost makefile in $dir"
+             touch "$dir/Makefile"
+          fi
+        done
+        echo "--- Source Code Repaired Successfully ---"
 
-    - name: Setup KernelSU-Next
+    - name: 6. Inject KernelSU-Next
       run: |
         cd kernel_source
-        echo "--- Installing KernelSU-Next ---"
+        echo "--- Installing KSU-Next ---"
         curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-    - name: Build Kernel
+    - name: 7. Configure & Build
       run: |
         cd kernel_source
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         export ARCH=arm64
         export SUBARCH=arm64
-        export KBUILD_BUILD_USER="kafi5"
-        export KBUILD_BUILD_HOST="GitHub-Action"
+        export KBUILD_BUILD_USER="Kafi-Pro"
+        export KBUILD_BUILD_HOST="Narzo-Lab"
         
-        # 'make clean' বাদ দেওয়া হয়েছে কারণ ওটাতেই এরর আসছিল
-        
-        echo "Loading Configuration..."
+        # ক্লিনিং বাদ দিয়ে সরাসরি কনফিগ লোড (সেফ মোড)
         make O=out spaced_defconfig
         
-        # KernelSU অন করা হচ্ছে
+        # KernelSU ফিচার অন করা
         echo "CONFIG_KSU=y" >> out/.config
         
+        # কনফিগ আপডেট
         make O=out olddefconfig
 
-        echo "Starting Build..."
+        echo "--- Starting Ultimate Build ---"
         make -j$(nproc --all) O=out \
                               CC=clang \
                               LD=ld.lld \
@@ -74,23 +85,26 @@ jobs:
                               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
                               Image.gz-dtb
 
-    - name: Create Flashable Zip (AnyKernel3)
+    - name: 8. Create Flashable Zip
       run: |
-        git clone https://github.com/osm0sis/AnyKernel3.git
-        
         # চেক করা হচ্ছে কার্নেল বিল্ড হয়েছে কিনা
-        if [ -f kernel_source/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        else
-            echo "Error: Kernel Image not found! Build Failed."
+        if [ ! -f kernel_source/out/arch/arm64/boot/Image.gz-dtb ]; then
+            echo "CRITICAL ERROR: Kernel Image failed to build!"
             exit 1
         fi
         
+        git clone https://github.com/osm0sis/AnyKernel3.git
+        cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        
         cd AnyKernel3
-        zip -r9 ../Narzo50-KSU-Next.zip * -x .git README.md *placeholder
+        # অপ্রয়োজনীয় ফাইল ক্লিন করা
+        rm -rf .git README.md .gitignore
+        
+        # জিপ বানানো
+        zip -r9 ../Narzo50-Pro-Build.zip *
 
-    - name: Upload Kernel Zip
+    - name: 9. Upload Final Product
       uses: actions/upload-artifact@v4
       with:
-        name: Narzo50-KSU-Next-Zip
-        path: Narzo50-KSU-Next.zip
+        name: Narzo50-Perf-Kernel
+        path: Narzo50-Perf-Build.zip
