@@ -1,4 +1,4 @@
-name: Build Narzo 50 Kernel (Fixed SUSFS)
+name: Build Narzo 50 Kernel
 
 on:
   workflow_dispatch:
@@ -38,12 +38,32 @@ jobs:
         echo "--- Downloading SUSFS ---"
         git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
         
-        echo "--- Patching SUSFS (Smart Mode) ---"
-        # আমি এখানে Wildcard (*) ব্যবহার করেছি যাতে ফোল্ডার নাম যা-ই হোক, সে 4.19 লেখা ফোল্ডার থেকে কপি করে নেয়
-        cp -r susfs4ksu/kernel_patches/*4.19*/fs/susfs fs/
-        cp susfs4ksu/kernel_patches/*4.19*/include/linux/susfs.h include/linux/
+        echo "--- Patching SUSFS (Auto-Find Mode) ---"
+        # ফোল্ডার খোঁজার স্মার্ট কমান্ড
+        # এটা susfs4ksu এর ভেতর যেখানেই 'susfs' ফোল্ডার পাবে, সেখান থেকে কপি করবে
+        SUSFS_SRC=$(find susfs4ksu -type d -name "susfs" | grep "fs/susfs" | head -n 1)
+        
+        if [ -z "$SUSFS_SRC" ]; then
+          echo "Error: SUSFS source folder not found! Listing files for debug:"
+          ls -R susfs4ksu
+          exit 1
+        fi
+        
+        echo "Found SUSFS source at: $SUSFS_SRC"
+        cp -r "$SUSFS_SRC" fs/
+        
+        # Header ফাইল খোঁজার স্মার্ট কমান্ড
+        SUSFS_HEADER=$(find susfs4ksu -type f -name "susfs.h" | head -n 1)
+        
+        if [ -z "$SUSFS_HEADER" ]; then
+           echo "Error: SUSFS header not found!"
+           exit 1
+        fi
+        
+        echo "Found SUSFS header at: $SUSFS_HEADER"
+        cp "$SUSFS_HEADER" include/linux/
 
-        # Config এডিট করা
+        # Config ফাইল এডিট করা
         sed -i '/source "fs\/notify\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
         sed -i '/obj-$(CONFIG_QUOTA)/a obj-$(CONFIG_SUSFS) += susfs/' fs/Makefile
 
@@ -88,5 +108,5 @@ jobs:
     - name: Upload Kernel Zip
       uses: actions/upload-artifact@v4
       with:
-        name: Narzo50-Kernel-kafi-Zip
-        path: Narzo50-Kernel-KSU-kafi-SUSFS.zip
+        name: Narzo50-Kernel-Zip
+        path: Narzo50-Kernel-KSU-SUSFS.zip
