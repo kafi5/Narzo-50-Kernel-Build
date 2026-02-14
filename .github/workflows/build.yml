@@ -1,7 +1,7 @@
-name: Build Narzo 50 Kernel
+name: Build Narzo 50 Kernel (KSU-Next + SUSFS)
 
 on:
-  workflow_dispatch: # বাটন টিপে বিল্ড শুরু করার জন্য
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,37 +20,69 @@ jobs:
       run: |
         mkdir -p clang
         cd clang
-        # Neutron Clang সেটআপ (Clang 17+ সাপোর্ট করে)
         curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
         chmod +x antman
         ./antman -S
         
     - name: Clone Kernel Source
       run: |
-        # তোমার দেওয়া লিঙ্ক
         git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
 
-    - name: Build Kernel
+    - name: Setup KernelSU-Next & SUSFS
       run: |
         cd kernel_source
         
-        # Toolchain পাথ সেট করা
+        echo "--- Installing KernelSU-Next ---"
+        # KernelSU-Next (Rifsxd Fork) ইনস্টল করা হচ্ছে
+        curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
+        
+        echo "--- Downloading SUSFS ---"
+        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19
+        
+        echo "--- Patching SUSFS ---"
+        # 1. SUSFS ফাইলগুলো কার্নেল সোর্সে কপি করা
+        cp -r susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19/fs/susfs fs/
+        cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19/include/linux/susfs.h include/linux/
+
+        # 2. fs/Kconfig ফাইলে SUSFS যোগ করা (অটোমেটিক এডিট)
+        # এটা 'source "fs/notify/Kconfig"' এর পরে SUSFS এর লাইন বসাবে
+        sed -i '/source "fs\/notify\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
+
+        # 3. fs/Makefile ফাইলে SUSFS যোগ করা
+        sed -i '/obj-$(CONFIG_QUOTA)/a obj-$(CONFIG_SUSFS) += susfs/' fs/Makefile
+
+        # 4. KernelSU তে SUSFS হুক যোগ করা (যদি প্রয়োজন হয়)
+        # সাধারণত KSU-Next এ SUSFS সাপোর্ট বিল্ট-ইন থাকে, তাই আলাদা প্যাচ নাও লাগতে পারে।
+        # কিন্তু সেফটির জন্য আমরা Defconfig এ সব অন করে দেব।
+
+    - name: Configure Build
+      run: |
+        cd kernel_source
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         export ARCH=arm64
         export SUBARCH=arm64
         
-        # আউটপুট ফোল্ডার তৈরি
-        mkdir -p out
-
-        echo "Cleaning up..."
         make O=out clean mrproper
-
-        echo "Loading Configuration: spaced_defconfig"
-        # তোমার ছবিতে দেওয়া কনফিগ লোড করা হচ্ছে
         make O=out spaced_defconfig
+        
+        # Defconfig-এ KSU এবং SUSFS অন করা হচ্ছে
+        echo "CONFIG_KSU=y" >> out/.config
+        echo "CONFIG_KSU_SUSFS=y" >> out/.config
+        echo "CONFIG_SUSFS=y" >> out/.config
+        echo "CONFIG_SUSFS_ENABLE_LOG=y" >> out/.config
+        
+        # কনফিগ আপডেট করা
+        make O=out olddefconfig
 
-        echo "Starting Build..."
-        # মেইন বিল্ড কমান্ড
+    - name: Build Kernel
+      run: |
+        cd kernel_source
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER="kafi5"
+        export KBUILD_BUILD_HOST="GitHub-Action"
+        
         make -j$(nproc --all) O=out \
                               CC=clang \
                               LD=ld.lld \
@@ -67,5 +99,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Image.gz-dtb
-        # বিল্ড হওয়ার পর ফাইলটা এখান থেকে আপলোড হবে
         path: kernel_source/out/arch/arm64/boot/Image.gz-dtb
