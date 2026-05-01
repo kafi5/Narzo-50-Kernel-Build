@@ -21,20 +21,19 @@ jobs:
         
     - name: 4. Clone Source
       run: |
-        git clone --depth=1 https://github.com/realme-mt6781-dev/android_kernel_realme_mt6781.git kernel_source
+        git clone --depth=1 https://github.com/kafi5/kernel_realme_mt6781_Nebula.git kernel_source
 
     - name: 5. REPAIR BROKEN SOURCE
       run: |
         cd kernel_source
-        # মিসিং ড্রাইভার ফিক্স (যেটা আগে এরর দিচ্ছিল)
+        
       
 
     - name: 6. Install Official KernelSU (Stable)
       run: |
         cd kernel_source
-        echo "--- Installing Official KernelSU ---"
-        # KSU-Next এর বদলে অফিসিয়াল KSU ব্যবহার করছি যা 4.19 এ ক্র্যাশ করে না
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+        echo "--- Installing Official KernelSU "
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
     - name: 7. Configure Kernel
       run: |
@@ -45,15 +44,8 @@ jobs:
         
         make O=out spaced_defconfig
         
-        echo "--- APPLYING PATCHES ---"
-        # ১. LTO বন্ধ করা (র‍্যাম ও এরর বাঁচাবে)
-        sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' out/.config
-        sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' out/.config
-        sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' out/.config
-        echo "CONFIG_LTO_NONE=y" >> out/.config
         
-        # ২. Werror বন্ধ করা
-        sed -i 's/CONFIG_CC_WERROR=y/CONFIG_CC_WERROR=n/' out/.config
+        
         
         # ৩. KernelSU অন করা
         echo "CONFIG_KSU=y" >> out/.config
