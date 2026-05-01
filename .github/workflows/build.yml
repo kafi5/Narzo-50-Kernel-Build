@@ -17,13 +17,7 @@ jobs:
         sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
         libelf-dev git curl python3 zip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-    - name: 3. Setup Neutron Clang
-      run: |
-        mkdir -p clang
-        cd clang
-        curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
-        chmod +x antman
-        ./antman -S
+  
         
     - name: 4. Clone Source
       run: |
@@ -33,8 +27,7 @@ jobs:
       run: |
         cd kernel_source
         # মিসিং ড্রাইভার ফিক্স (যেটা আগে এরর দিচ্ছিল)
-        mkdir -p drivers/soc/oplus/system/acm
-        echo "obj-n := dummy.o" > drivers/soc/oplus/system/acm/Makefile
+      
 
     - name: 6. Install Official KernelSU (Stable)
       run: |
@@ -70,38 +63,8 @@ jobs:
     - name: 8. Build Kernel
       run: |
         cd kernel_source
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export KBUILD_BUILD_USER="Kafi-Stable"
-        export KBUILD_BUILD_HOST="Narzo-Lab"
+        bash build.sh
         
-        echo "--- Starting Build ---"
-        make -j$(nproc --all) O=out \
-                              CC=clang \
-                              LD=ld.lld \
-                              AR=llvm-ar \
-                              NM=llvm-nm \
-                              OBJCOPY=llvm-objcopy \
-                              OBJDUMP=llvm-objdump \
-                              STRIP=llvm-strip \
-                              CROSS_COMPILE=aarch64-linux-gnu- \
-                              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-                              Image.gz-dtb
-
-    - name: 9. Create Zip
-      run: |
-        if [ ! -f kernel_source/out/arch/arm64/boot/Image.gz-dtb ]; then
-            echo "CRITICAL ERROR: Kernel Image not found!"
-            exit 1
-        fi
-        
-        git clone https://github.com/osm0sis/AnyKernel3.git
-        cp kernel_source/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        cd AnyKernel3
-        rm -rf .git README.md .gitignore
-        zip -r9 ../Narzo50-Official-KSU.zip *
-
     - name: 10. Upload
       uses: actions/upload-artifact@v4
       with:
