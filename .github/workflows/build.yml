@@ -1,4 +1,4 @@
-name: Narzo 50 Stable Build (Official KSU)
+name: Build Kernel
 
 on:
   workflow_dispatch:
@@ -6,59 +6,24 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: 1. Checkout Code
-      uses: actions/checkout@v2
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-    - name: 2. Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
-        libelf-dev git curl python3 zip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+      - name: Setup Clang Toolchain
+        uses: kdrag0n/get-clang@v1
 
-  
-        
-    - name: 4. Clone Source
-      run: |
-        git clone --depth=1 https://github.com/kafi5/kernel_realme_mt6781_Nebula.git kernel_source
+      - name: Remove Git metadata to fix kernel version (remove plus sign)
+        run: |
+          rm -rf .git
+          echo "" > localversion
 
-    - name: 5. REPAIR BROKEN SOURCE
-      run: |
-        cd kernel_source
-        
-      
-
-    - name: 6. Install Official KernelSU (Stable)
-      run: |
-        cd kernel_source
-        echo "--- Installing Official KernelSU "
-        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
-
-    - name: 7. Configure Kernel
-      run: |
-        cd kernel_source
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        export ARCH=arm64
-        export SUBARCH=arm64
-        
-        make O=out spaced_defconfig
-        
-        
-        
-        
-        # ৩. KernelSU অন করা
-        echo "CONFIG_KSU=y" >> out/.config
-
-        make O=out olddefconfig
-
-    - name: 8. Build Kernel
-      run: |
-        cd kernel_source
-        bash build.sh
-        
-    - name: 10. Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: Narzo50-Perf-Kernel
-        path: Narzo50-Perf-Build.zip
+      - name: Build Kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="/opt/clang/bin:$PATH"
+          
+          # আপনার ফোনের সঠিক defconfig ফাইলের নাম এখানে বসাতে হবে (যেমন: rm6781_defconfig বা rmx3492_defconfig)
+          make O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- apollo_defconfig
+          make O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
